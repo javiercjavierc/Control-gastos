@@ -1,6 +1,6 @@
 /* Service worker — cachea el "shell" de la app para que funcione offline
    y sea instalable. Subí el número de versión cuando cambies archivos. */
-const CACHE = "control-gastos-v8";
+const CACHE = "control-gastos-v10";
 const SHELL = [
   "./",
   "./index.html",

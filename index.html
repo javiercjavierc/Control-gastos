@@ -120,6 +120,11 @@
   .hero-foot{color:var(--faint);font-size:12px;margin-top:8px}
   .hero-acc{margin-top:12px;font-size:13px;color:var(--muted)}
   .hero-acc b{font-family:var(--font-display);font-weight:600;color:var(--ink);font-size:16px}
+  .hero-netmonth{margin-top:14px;font-size:14px;color:var(--muted)}
+  .hero-netmonth b{font-family:var(--font-display);font-weight:600;font-size:17px;color:var(--ink)}
+  .hero-netmonth b.pos{color:var(--pos)} .hero-netmonth b.neg{color:var(--neg)}
+  .hero-proj{margin-top:8px;font-size:12.5px;color:var(--muted)}
+  .hero-proj b{color:var(--ink);font-weight:600}
   .hero-sub{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap}
   .chip{flex:1;min-width:110px;border:1px solid var(--line);border-radius:12px;padding:10px 13px;background:var(--surface-2)}
   .chip .k{font-size:11.5px;color:var(--muted)} .chip .v{font-size:17px;font-weight:600;margin-top:2px}
@@ -339,10 +344,11 @@
     <section class="hero hidden" id="hero">
       <div class="hero-left">
         <div class="hero-month"><span class="m" id="heroMonth">—</span><span id="heroEdited"></span></div>
-        <div class="hero-net-label">Neto del mes</div>
-        <div class="hero-net" id="heroNet">—</div>
-        <div class="hero-foot">Neto = Ingresos − Gastos − Ahorro</div>
-        <div class="hero-acc" id="heroAcc"></div>
+        <div class="hero-net-label">Saldo acumulado hasta <span id="heroAccMonth">—</span></div>
+        <div class="hero-net" id="heroAccBig">—</div>
+        <div class="hero-foot">Se traslada mes a mes</div>
+        <div class="hero-netmonth" id="heroNetMonth">Neto del mes: —</div>
+        <div class="hero-proj" id="heroProj"></div>
         <div class="hero-sub">
           <div class="chip inc"><div class="k">Ingresos</div><div class="v num" id="heroInc">—</div></div>
           <div class="chip exp"><div class="k">Gastos</div><div class="v num" id="heroExp">—</div></div>
@@ -359,6 +365,11 @@
       <div class="panel"><div class="panel-head inc"><h2>Ingresos</h2><span class="total num" id="totInc">—</span></div><ul class="rows" id="rowsInc"></ul></div>
       <div class="panel"><div class="panel-head exp"><h2>Gastos</h2><span class="total num" id="totExp">—</span></div><ul class="rows" id="rowsExp"></ul></div>
       <div class="panel"><div class="panel-head sav"><h2>Ahorro</h2><span class="total num" id="totSav">—</span></div><ul class="rows" id="rowsSav"></ul></div>
+    </section>
+
+    <section id="movsBox" class="panel hidden" style="margin-top:16px">
+      <div class="panel-head"><h2>Movimientos del mes</h2><span class="hint" id="movsHint"></span></div>
+      <ul class="rows" id="movsList"></ul>
     </section>
 
     <section id="emptyState" class="panel hidden">
@@ -409,6 +420,7 @@
   <section id="arqueoView" class="hidden">
     <div class="panel" style="padding:20px 22px">
       <p class="hint" style="margin:0 0 16px">Arqueo del último mes cargado (<span id="arqMonthLbl">—</span>). Contá lo que realmente tenés y se compara con el saldo acumulado. Si hay diferencia, la cargás en Varios y queda cuadrado. El ahorro no entra: va por otro lado.</p>
+      <div class="hint" id="arqSaved" style="margin:-8px 0 12px"></div>
       <div class="arq-grid">
         <div class="arq-box">
           <div class="k">Saldo acumulado — lo que deberías tener</div>
@@ -440,7 +452,7 @@
     <label class="fld"><span class="lab">Sección</span>
       <select id="qSection"><option value="income">Ingresos</option><option value="expense" selected>Gastos</option><option value="savings">Ahorro</option></select>
     </label>
-    <label class="fld"><span class="lab">Concepto</span><select id="qConcept"></select></label>
+    <label class="fld"><span class="lab">Concepto</span><div style="display:flex;gap:8px"><select id="qConcept" style="flex:1;min-width:0"></select><button type="button" id="qNewConcept" class="ghost" style="flex:0 0 auto;border:1px solid var(--line-strong)">+ Nuevo</button></div></label>
     <label class="fld"><span class="lab">Mes</span><input type="month" id="qMonth"></label>
     <label class="fld"><span class="lab">Monto a sumar</span><input type="text" inputmode="decimal" id="qAmount" placeholder="0"></label>
     <label class="qpend"><input type="checkbox" id="qPending"> Pendiente de pago — no cuenta hasta marcarlo pagado</label>
@@ -511,6 +523,7 @@ const FB_VERSION = "12.9.0";
 const MESES=["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"];
 const CATS=[["income","ingresos","inc","Ingresos"],["expense","gastos","exp","Gastos"],["savings","ahorro","sav","Ahorro"]];
 const fmt=(n)=>new Intl.NumberFormat("es-AR",{style:"currency",currency:"ARS",maximumFractionDigits:0}).format(Math.round(n||0));
+const fmtPlain=(n)=>new Intl.NumberFormat("es-AR",{maximumFractionDigits:2}).format(Math.round((Number(n)||0)*100)/100);
 const keyToLabel=(k)=>{const[y,m]=k.split("-");return MESES[(+m)-1]+"/"+y.slice(2);};
 const $=(id)=>document.getElementById(id);
 
@@ -521,7 +534,7 @@ const DEFAULT_CONCEPTS={
 };
 
 const DEFAULT_ACCOUNTS=["Billetes Javi","Billetes Viki","Bancos Javi","Banco Viki","FCI Javi","FCI Viki"];
-const state={concepts:structuredClone(DEFAULT_CONCEPTS),accounts:[...DEFAULT_ACCOUNTS],months:{},pending:[],selected:null,view:"resumen"};
+const state={concepts:structuredClone(DEFAULT_CONCEPTS),accounts:[...DEFAULT_ACCOUNTS],months:{},pending:[],arqueo:{values:{},savedAt:null},selected:null,view:"resumen"};
 
 function toast(m){const t=$("toast");t.textContent=m;t.classList.add("show");clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove("show"),2200);}
 function banner(msg,warn){const b=$("banner");if(!msg){b.classList.remove("show");return;}b.textContent=msg;b.classList.toggle("warn",!!warn);b.classList.add("show");}
@@ -557,16 +570,46 @@ function renderResumen(){
   const key=state.selected,m=state.months[key],t=totals(key);
   $("heroMonth").textContent=keyToLabel(key);
   $("heroEdited").textContent=m.updatedAt?"· "+new Date(m.updatedAt).toLocaleDateString("es-AR",{day:"numeric",month:"short"}):"";
-  const net=$("heroNet");net.textContent=fmt(t.net);net.className="hero-net "+(t.net>=0?"pos":"neg");
+  const accNet=accThrough(key,x=>x.net);
+  $("heroAccMonth").textContent=keyToLabel(key);
+  const big=$("heroAccBig");big.textContent=fmt(accNet);big.className="hero-net "+(accNet>=0?"pos":"neg");
+  $("heroNetMonth").innerHTML=`Neto del mes: <b class="${t.net>=0?'pos':'neg'}">${fmt(t.net)}</b>`;
+  const pm=pendingDelta(x=>x===key), pa=pendingDelta(x=>x<=key);
+  if(pm!==0||pa!==0){$("heroProj").innerHTML=`Con pendientes pagados → neto mes <b>${fmt(t.net+pm)}</b> · acumulado <b>${fmt(accNet+pa)}</b>`;$("heroProj").style.display="";}
+  else{$("heroProj").style.display="none";}
   $("heroInc").textContent=fmt(t.inc);$("heroExp").textContent=fmt(t.exp);$("heroSav").textContent=fmt(t.sav);
   renderChart(keys,key);
   renderRows("rowsInc",state.concepts.income,catData(m,"ingresos"));
   renderRows("rowsExp",state.concepts.expense,catData(m,"gastos"));
   renderRows("rowsSav",state.concepts.savings,catData(m,"ahorro"));
   $("totInc").textContent=fmt(t.inc);$("totExp").textContent=fmt(t.exp);$("totSav").textContent=fmt(t.sav);
-  const through=keys.slice(0,keys.indexOf(key)+1);
-  const accNet=through.reduce((a,k)=>a+totals(k).net,0);
-  $("heroAcc").innerHTML=`Saldo acumulado hasta ${keyToLabel(key)}: <b class="num">${fmt(accNet)}</b>`;
+  renderMovs(key);
+}
+function renderMovs(key){
+  const box=$("movsBox"),ul=$("movsList"),m=state.months[key]||{};
+  const movs=(m.movimientos||[]).slice().sort((a,b)=>(b.ts||0)-(a.ts||0));
+  if(!movs.length){box.classList.add("hidden");return;}
+  box.classList.remove("hidden");$("movsHint").textContent=movs.length+" cargas";ul.innerHTML="";
+  const SECL={income:"Ingreso",expense:"Gasto",savings:"Ahorro"};
+  movs.forEach(mv=>{
+    const li=document.createElement("li");li.className="row";
+    const nm=document.createElement("span");nm.className="name";nm.textContent=mv.concept+" · "+(SECL[mv.section]||"");
+    const amt=document.createElement("span");amt.className="amt num"+(mv.section==="income"?"":" neg");amt.textContent=fmt(mv.amount);
+    const del=document.createElement("button");del.className="cat-del";del.innerHTML="&times;";del.title="Borrar carga";del.onclick=()=>deleteMov(key,mv.id);
+    li.append(nm,amt,del);ul.appendChild(li);
+  });
+}
+async function deleteMov(key,id){
+  const m=state.months[key];if(!m||!m.movimientos)return;
+  const mv=m.movimientos.find(x=>x.id===id);if(!mv)return;
+  if(!confirm("¿Borrar esta carga de "+fmt(mv.amount)+" en "+mv.concept+"?"))return;
+  const base=structuredClone(m),field=SEC_FIELD[mv.section]||"gastos";
+  base[field]=base[field]||{};
+  base[field][mv.concept]=(Number(base[field][mv.concept])||0)-Number(mv.amount||0);
+  if(Math.abs(base[field][mv.concept])<0.005)delete base[field][mv.concept];
+  base.movimientos=(base.movimientos||[]).filter(x=>x.id!==id);base.updatedAt=Date.now();
+  state.months[key]=base;render();
+  try{await Store.saveMonth(key,base);toast("Carga borrada");}catch(e){toast("No se pudo guardar");}
 }
 function renderChart(keys,selKey){
   const nets=keys.map(k=>totals(k).net),maxAbs=Math.max(1,...nets.map(Math.abs));
@@ -680,7 +723,7 @@ function renderMatrix(keys){
 
 /* ---------- arqueo ---------- */
 const accThrough=(key,sel)=>sortedKeys().filter(k=>k<=key).reduce((a,k)=>a+sel(totals(k)),0);
-let arqVals=[];
+let _arqT;function saveArqueoDebounced(){clearTimeout(_arqT);_arqT=setTimeout(()=>{Store.saveArqueo(state.arqueo).catch(()=>{});},700);}
 function lastKey(){return sortedKeys().slice(-1)[0]||null;}
 function renderArqueo(){
   const key=lastKey();
@@ -690,18 +733,23 @@ function renderArqueo(){
     $("arqApply").disabled=true;return;
   }
   $("arqMonthLbl").textContent=keyToLabel(key);
-  if(arqVals.length!==state.accounts.length){const old=arqVals;arqVals=state.accounts.map((_,i)=>old[i]||"");}
   const host=$("arqRows");host.innerHTML="";
   state.accounts.forEach((acc,i)=>{
     const row=document.createElement("div");row.className="arq-row";
     const nm=document.createElement("input");nm.type="text";nm.className="nm";nm.placeholder="Nombre de la cuenta";nm.value=acc;
-    nm.onchange=()=>{state.accounts[i]=nm.value.trim();saveConfig();};
-    const am=document.createElement("input");am.type="text";am.className="amt-in";am.inputMode="decimal";am.placeholder="0";am.value=arqVals[i]||"";
-    am.oninput=()=>{arqVals[i]=am.value;recalcArq();};
+    nm.onchange=()=>{const old=state.accounts[i],nv=nm.value.trim();state.accounts[i]=nv;if(old&&old!==nv&&state.arqueo.values[old]!=null){state.arqueo.values[nv]=state.arqueo.values[old];delete state.arqueo.values[old];}saveConfig();saveArqueoDebounced();};
+    const am=document.createElement("input");am.type="text";am.className="amt-in";am.inputMode="decimal";am.placeholder="0";
+    const rawv=state.arqueo.values[acc];
+    am.value=(rawv!=null&&rawv!=="")?fmtPlain(parseNum(rawv)):"";
+    if(rawv&&/[-+*/=]/.test(String(rawv)))am.title="Fórmula: "+rawv;
+    am.onfocus=()=>{const r=state.arqueo.values[acc];am.value=(r!=null)?String(r):"";if(am.select)am.select();};
+    am.oninput=()=>{state.arqueo.values[acc]=am.value;state.arqueo.savedAt=Date.now();recalcArq();saveArqueoDebounced();};
+    am.onblur=()=>{const r=state.arqueo.values[acc];am.value=(r!=null&&r!=="")?fmtPlain(parseNum(r)):"";am.title=(r&&/[-+*/=]/.test(String(r)))?("Fórmula: "+r):"";};
     const del=document.createElement("button");del.className="cat-del";del.innerHTML="&times;";del.title="Quitar cuenta";
-    del.onclick=()=>{state.accounts.splice(i,1);arqVals.splice(i,1);saveConfig();renderArqueo();};
+    del.onclick=()=>{const rem=state.accounts.splice(i,1)[0];delete state.arqueo.values[rem];saveConfig();saveArqueoDebounced();renderArqueo();};
     row.append(nm,am,del);host.appendChild(row);
   });
+  $("arqSaved").textContent=state.arqueo.savedAt?("Guardado "+new Date(state.arqueo.savedAt).toLocaleString("es-AR",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"})):"";
   recalcArq();
   renderPendingList();
 }
@@ -746,7 +794,7 @@ function recalcArq(){
   const key=lastKey();if(!key)return;
   const expected=accThrough(key,t=>t.net);
   $("arqExpected").textContent=fmt(expected);
-  const real=arqVals.reduce((a,v)=>a+parseNum(v),0);
+  const real=state.accounts.reduce((a,acc)=>a+parseNum(state.arqueo.values[acc]||""),0);
   $("arqReal").textContent=fmt(real);
   const diff=expected-real, el=$("arqDiff"), btn=$("arqApply");
   if(Math.abs(diff)<1){
@@ -831,7 +879,7 @@ function buildEntry(key){
       const row=document.createElement("div");row.className="entry";
       const en=document.createElement("span");en.className="en";en.textContent=name;
       const inp=document.createElement("input");inp.type="text";inp.inputMode="decimal";inp.className="amt-in";inp.placeholder="0";inp.dataset.name=name;
-      inp.value=(vals&&vals[name]!=null)?String(vals[name]):"";
+      inp.value=(vals&&vals[name]!=null)?numForInput(vals[name]):"";
       inp.addEventListener("input",updSums);
       row.append(en,inp);el.appendChild(row);
     });
@@ -841,7 +889,16 @@ function buildEntry(key){
   mk("entrySav",state.concepts.savings,m.ahorro);
   updSums();
 }
-function parseNum(s){if(s==null)return 0;s=String(s).trim().replace(/\s/g,"").replace(/\./g,"").replace(",",".");const n=parseFloat(s);return isNaN(n)?0:n;}
+function parseNum(s){
+  if(s==null)return 0;
+  let t=String(s).trim();if(!t)return 0;
+  if(t[0]==="=")t=t.slice(1);
+  t=t.replace(/\s/g,"").replace(/\./g,"").replace(/,/g,".");
+  if(!/^[-+*/().0-9]+$/.test(t))return 0;
+  try{const v=Function('"use strict";return('+t+')')();return(typeof v==="number"&&isFinite(v))?v:0;}catch(e){return 0;}
+}
+function numForInput(n){if(n==null||n==="")return "";const x=Number(n);if(isNaN(x))return "";return (Math.round(x*100)/100).toString().replace(".",",");}
+function pendingDelta(pred){return (state.pending||[]).filter(p=>pred(p.month)).reduce((a,p)=>a+(p.section==="income"?Number(p.amount||0):-Number(p.amount||0)),0);}
 function readGroup(id){const o={};$(id).querySelectorAll("input.amt-in").forEach(i=>{const r=i.value.trim();if(r!=="")o[i.dataset.name]=parseNum(r);});return o;}
 function updSums(){
   const inc=sumObj(readGroup("entryInc")),exp=sumObj(readGroup("entryExp")),sav=sumObj(readGroup("entrySav"));
@@ -903,6 +960,8 @@ async function saveQuick(){
     :{label:keyToLabel(key),year:+key.split("-")[0],month:+key.split("-")[1],ingresos:{},gastos:{},ahorro:{}};
   base[field]=base[field]||{};
   base[field][con]=(Number(base[field][con])||0)+add;
+  base.movimientos=base.movimientos||[];
+  base.movimientos.push({id:"m"+Date.now().toString(36)+Math.random().toString(36).slice(2,5),section,concept:con,amount:add,ts:Date.now()});
   base.updatedAt=Date.now();
   state.months[key]=base;state.selected=key;closeScrim("scrimQuick");render();
   try{await Store.saveMonth(key,base);toast(fmt(add)+" → "+con);}catch(e){toast("No se pudo guardar");}
@@ -1001,7 +1060,8 @@ $("btnLoadEmpty").onclick=()=>openEntry(null);
 $("mEdit").onclick=()=>{menu.classList.remove("show");openEntry(state.selected);};
 $("qSection").onchange=fillQConcepts;$("qConcept").onchange=updateQPrev;$("qMonth").onchange=updateQPrev;
 $("qAmount").addEventListener("input",updateQPrev);$("qSave").onclick=saveQuick;$("qPending").onchange=updateQPrev;
-$("arqAddRow").onclick=()=>{state.accounts.push("");arqVals.push("");renderArqueo();};
+$("qNewConcept").onclick=async()=>{const sec=$("qSection").value,lbl={income:"ingreso",expense:"gasto",savings:"concepto de ahorro"}[sec];const name=prompt("Nuevo "+lbl+":");if(!name||!name.trim())return;const n=name.trim();if(!state.concepts[sec].includes(n)){state.concepts[sec].push(n);try{await saveConfig();}catch(e){}}fillQConcepts();$("qConcept").value=n;updateQPrev();};
+$("arqAddRow").onclick=()=>{state.accounts.push("");renderArqueo();};
 $("arqApply").onclick=applyArqueo;
 $("entrySave").onclick=saveEntry;$("entryDelete").onclick=deleteMonth;
 $("mCats").onclick=openCats;$("catSave").onclick=saveCats;
@@ -1016,7 +1076,7 @@ $("mImport").onclick=importFile;$("mExportCsv").onclick=exportCSV;$("mExportJson
    ============================================================ */
 const Store={
   mode:"local",
-  async saveMonth(k,doc){}, async deleteMonth(k){}, async saveConcepts(c){}, async savePending(a){},
+  async saveMonth(k,doc){}, async deleteMonth(k){}, async saveConcepts(c){}, async savePending(a){}, async saveArqueo(a){},
 };
 
 function applyData(config,months){
@@ -1037,14 +1097,15 @@ function initLocal(){
   Store.mode="local";$("modeTag").textContent="Guardado: este dispositivo";
   const LK="cdg2:data";
   const load=()=>{try{return JSON.parse(localStorage.getItem(LK)||"null");}catch{return null;}};
-  const save=()=>{try{localStorage.setItem(LK,JSON.stringify({config:{income:state.concepts.income,expense:state.concepts.expense,savings:state.concepts.savings,accounts:state.accounts},months:state.months,pending:state.pending}));}catch{}};
+  const save=()=>{try{localStorage.setItem(LK,JSON.stringify({config:{income:state.concepts.income,expense:state.concepts.expense,savings:state.concepts.savings,accounts:state.accounts},months:state.months,pending:state.pending,arqueo:state.arqueo}));}catch{}};
   const d=load();
-  if(d){state.pending=d.pending||[];applyData(d.config||d.concepts,d.months);} else render();
+  if(d){state.pending=d.pending||[];if(d.arqueo)state.arqueo=d.arqueo;applyData(d.config||d.concepts,d.months);} else render();
   Store.saveMonth=async()=>save();
   Store.deleteMonth=async()=>save();
   Store.saveConcepts=async()=>save();
   Store.savePending=async()=>save();
-  window.addEventListener("storage",e=>{if(e.key===LK){const d=load();if(d){state.pending=d.pending||[];applyData(d.config||d.concepts,d.months);}}});
+  Store.saveArqueo=async()=>save();
+  window.addEventListener("storage",e=>{if(e.key===LK){const d=load();if(d){state.pending=d.pending||[];if(d.arqueo)state.arqueo=d.arqueo;applyData(d.config||d.concepts,d.months);}}});
   banner("Modo local: los datos se guardan en este dispositivo. Para compartir con la familia, configurá Firebase (ver README).");
 }
 
@@ -1066,12 +1127,14 @@ async function initFirebase(){
   const HOME="casa";
   const conceptsRef=fs.doc(db,"households",HOME,"meta","concepts");
   const pendingRef=fs.doc(db,"households",HOME,"meta","pending");
+  const arqueoRef=fs.doc(db,"households",HOME,"meta","arqueo");
   const monthsCol=fs.collection(db,"households",HOME,"months");
 
   let unsub=[];
   function startSubs(){
     unsub.push(fs.onSnapshot(conceptsRef,snap=>{if(snap.exists())applyData(snap.data(),null);}));
     unsub.push(fs.onSnapshot(pendingRef,snap=>{state.pending=snap.exists()?(snap.data().items||[]):[];render();}));
+    unsub.push(fs.onSnapshot(arqueoRef,snap=>{if(document.activeElement&&document.activeElement.closest&&document.activeElement.closest("#arqRows"))return;if(snap.exists()){const d=snap.data();state.arqueo={values:d.values||{},savedAt:d.savedAt||null};render();}}));
     unsub.push(fs.onSnapshot(monthsCol,snap=>{
       const next={};snap.forEach(d=>{const m=d.data();next[d.id]={label:m.label||keyToLabel(d.id),year:m.year,month:m.month,ingresos:m.ingresos||{},gastos:m.gastos||{},ahorro:m.ahorro||{},updatedAt:m.updatedAt};});
       applyData(null,next);
@@ -1081,6 +1144,7 @@ async function initFirebase(){
   Store.deleteMonth=(k)=>fs.deleteDoc(fs.doc(monthsCol,k));
   Store.saveConcepts=(c)=>fs.setDoc(conceptsRef,{...c,updatedAt:Date.now()});
   Store.savePending=(items)=>fs.setDoc(pendingRef,{items,updatedAt:Date.now()});
+  Store.saveArqueo=(a)=>fs.setDoc(arqueoRef,{values:a.values||{},savedAt:a.savedAt||Date.now()});
 
   // auth
   const loginView=$("loginView"),resumen=$("resumenView"),stats=$("statsView");
@@ -1093,7 +1157,7 @@ async function initFirebase(){
   }
   auth.onAuthStateChanged(A,user=>{
     if(user){banner("");startSubs();showApp(true);}
-    else{unsub.forEach(u=>u());unsub=[];state.months={};state.pending=[];showApp(false);}
+    else{unsub.forEach(u=>u());unsub=[];state.months={};state.pending=[];state.arqueo={values:{},savedAt:null};showApp(false);}
   });
 
   let creating=false;
